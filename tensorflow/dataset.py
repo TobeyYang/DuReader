@@ -25,10 +25,12 @@ import numpy as np
 from collections import Counter
 import tensorflow as tf
 
+
 class BRCDataset(object):
     """
     This module implements the APIs for loading and using baidu reading comprehension dataset
     """
+
     def __init__(self, config, max_p_num, max_p_len, max_q_len,
                  train_files=[], dev_files=[], test_files=[]):
         self.config = config
@@ -199,8 +201,7 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
-
-    def _save_records(self, writer, dataset):
+    def _save_records(self, writer, dataset, pad_id):
         if dataset == "train":
             data_set = self.train_set
         elif dataset == "dev":
@@ -210,30 +211,40 @@ class BRCDataset(object):
         else:
             raise NameError("the dataset name is invalid!")
 
-        for sample in data_set:
-            example = tf.train.Example(
-                features=tf.train.Features(
-                    feature = {
-                        ""
-                        "question_token_ids": tf.train.Feature(int64_list=tf.train.Int64List(sample["question_token_ids"]))
+        for index, sample in enumerate(data_set):
+            context_idxs = np.full([self.config.max_p_num, self.config.max_p_len],  fill_value=pad_id,  dtype=np.int32)
+            question_idxs = np.full([self.config.max_q_len], fill_value=pad_id, dtype=np.int32)
 
-                    }
-                )
-            )
+            for idx, passage in enumerate(sample['passages']):
+                p_token_ids = passage['passage_token_ids']
+                context_idxs[idx] = (p_token_ids + (self.max_p_len - len(p_token_ids)) * [pad_id])[:self.max_p_len]
 
+            question_idxs[0:] = (sample['question_token_ids'] + (self.max_q_len - len(sample["question_token_ids"])) * [
+                pad_id])[:self.max_q_len]
 
+            if 'answer_passages' in sample and len(sample['answer_passages']):
+                gold_passage_offset = self.max_p_len * sample['answer_passages'][0]
+                start_id = gold_passage_offset + sample['answer_spans'][0][0]
+                end_id = gold_passage_offset + sample['answer_spans'][0][1]
+            else:
+                start_id = end_id = 0
+            if index == 0:
+                print()
+
+            example = tf.train.Example(features=tf.train.Features(feature={
+                "passage_token_ids": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_idxs.tostring()])),
+                "question_token_ids": tf.train.Feature(int64_list=tf.train.Int64List(value=[question_idxs.tostring()])),
+                "start_id": tf.train.Feature(bytes_list=tf.train.BytesList(value=[start_id])),
+                "end_id": tf.train.Feature(bytes_list=tf.train.BytesList(value=[end_id]))
+            }))
+            writer.write(example.SerializeToString())
+        self.logger.info("{} {} records have saved.".format(len(data_set), dataset))
+        writer.close()
 
     def save_records(self):
         train_records_path = os.path.join(self.config.records_dir, "train.tfrecords")
         dev_records_path = os.path.join(self.config.records_dir, "dev.tfrecords")
         test_records_path = os.path.join(self.config.records_dir, "test.tfrecords")
-
-
-
-
-
-
-
 
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
@@ -261,6 +272,5 @@ class BRCDataset(object):
         for batch_start in np.arange(0, data_size, batch_size):
             batch_indices = indices[batch_start: batch_start + batch_size]
             yield self._one_mini_batch(data, batch_indices, pad_id)
-
 
     def store_as_records(self):

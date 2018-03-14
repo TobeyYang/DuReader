@@ -71,8 +71,8 @@ def parse_args():
                                 help='size of LSTM hidden units')
     model_settings.add_argument('--max_p_num', type=int, default=5,
                                 help='max passage num in one sample')
-    model_settings.add_argument('--max_p_len', type=int, default=500,
-                                help='max length of passage')
+    model_settings.add_argument('--max_p_len', type=int, default=200,
+                                help='max length of passage')                # I changed this from 500 to 200.
     model_settings.add_argument('--max_q_len', type=int, default=60,
                                 help='max length of question')
     model_settings.add_argument('--max_a_len', type=int, default=200,
