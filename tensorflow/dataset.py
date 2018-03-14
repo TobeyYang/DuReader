@@ -23,14 +23,15 @@ import json
 import logging
 import numpy as np
 from collections import Counter
-
+import tensorflow as tf
 
 class BRCDataset(object):
     """
     This module implements the APIs for loading and using baidu reading comprehension dataset
     """
-    def __init__(self, max_p_num, max_p_len, max_q_len,
+    def __init__(self, config, max_p_num, max_p_len, max_q_len,
                  train_files=[], dev_files=[], test_files=[]):
+        self.config = config
         self.logger = logging.getLogger("brc")
         self.max_p_num = max_p_num
         self.max_p_len = max_p_len
@@ -57,7 +58,9 @@ class BRCDataset(object):
         Loads the dataset
         Args:
             data_path: the data file to load
+            and save the data to records file.
         """
+
         with open(data_path) as fin:
             data_set = []
             for lidx, line in enumerate(fin):
@@ -196,6 +199,42 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
+
+    def _save_records(self, writer, dataset):
+        if dataset == "train":
+            data_set = self.train_set
+        elif dataset == "dev":
+            data_set = self.dev_set
+        elif dataset == "test":
+            data_set = self.test_set
+        else:
+            raise NameError("the dataset name is invalid!")
+
+        for sample in data_set:
+            example = tf.train.Example(
+                features=tf.train.Features(
+                    feature = {
+                        ""
+                        "question_token_ids": tf.train.Feature(int64_list=tf.train.Int64List(sample["question_token_ids"]))
+
+                    }
+                )
+            )
+
+
+
+    def save_records(self):
+        train_records_path = os.path.join(self.config.records_dir, "train.tfrecords")
+        dev_records_path = os.path.join(self.config.records_dir, "dev.tfrecords")
+        test_records_path = os.path.join(self.config.records_dir, "test.tfrecords")
+
+
+
+
+
+
+
+
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
         Generate data batches for a specific dataset (train/dev/test)
@@ -222,3 +261,6 @@ class BRCDataset(object):
         for batch_start in np.arange(0, data_size, batch_size):
             batch_indices = indices[batch_start: batch_start + batch_size]
             yield self._one_mini_batch(data, batch_indices, pad_id)
+
+
+    def store_as_records(self):

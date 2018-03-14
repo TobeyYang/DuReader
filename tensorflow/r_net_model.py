@@ -9,7 +9,7 @@ from utils import compute_bleu_rouge, normalize
 
 
 class Model(object):
-    def __init__(self, vocab, config , opt=True):
+    def __init__(self, config , opt=True):
 
         self.logger = logging.getLogger("brc")
         self.config = config
@@ -130,7 +130,11 @@ class Model(object):
         return self.loss
 
 
+def tower_loss(batch, config):
+    model = Model()
+
 def train(data, vocab, epochs, batch_size, save_dir, save_prefix, dropout_keep_prob=1.0, evaluate=True):
     pad_id = vocab.get_id(vocab.pad_token)
     max_bleu_4=0
+
 

@@ -92,6 +92,8 @@ def parse_args():
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../data/vocab/',
                                help='the dir to save vocabulary')
+    path_settings.add_argument('--records_dir', default='../data/records/',
+                               help='the dir to save records of data')
     path_settings.add_argument('--model_dir', default='../data/models/',
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
@@ -159,6 +161,13 @@ def train(args):
                    dropout_keep_prob=args.dropout_keep_prob)
     logger.info('Done with model training!')
 
+
+def store_data(args):
+    """
+    store the data
+    :param args:
+    :return:
+    """
 
 def evaluate(args):
     """
