@@ -9,7 +9,7 @@ import argparse
 import logging
 from dataset import BRCDataset
 from vocab import Vocab
-from rc_model import RCModel
+# from rc_model import RCModel
 
 
 def parse_args():
@@ -110,7 +110,8 @@ def prepare(args):
                                                                             vocab.size()))
 
     logger.info('Assigning embeddings...')
-    vocab.randomly_init_embeddings(args.embed_size)          #random init in prepare!!
+    # vocab.randomly_init_embeddings(args.embed_size)          #random init in prepare!!
+
 
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:

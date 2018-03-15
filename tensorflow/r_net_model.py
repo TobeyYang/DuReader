@@ -30,6 +30,7 @@ class Model(object):
         with tf.device("/cpu:0"):
             self.is_train = tf.get_variable(
                 "is_train", dtype=tf.bool, trainable=False, initializer=tf.constant(True, dtype=tf.bool))
+            #todo: where is the shape?
             self.word_mat = tf.get_variable("word_mat", initializer=tf.random_uniform_initializer, dtype=tf.float32)
 
         #Todo:修改字典， span_id必须是0

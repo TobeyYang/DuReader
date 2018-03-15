@@ -201,7 +201,7 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
-    def _save_records(self, writer, dataset, pad_id):
+    def _save_records(self, records_path, dataset, pad_id):
         if dataset == "train":
             data_set = self.train_set
         elif dataset == "dev":
@@ -211,9 +211,12 @@ class BRCDataset(object):
         else:
             raise NameError("the dataset name is invalid!")
 
+        writer = tf.python_io.TFRecordWriter(records_path)
+
         for index, sample in enumerate(data_set):
-            context_idxs = np.full([self.config.max_p_num, self.config.max_p_len],  fill_value=pad_id,  dtype=np.int32)
-            question_idxs = np.full([self.config.max_q_len], fill_value=pad_id, dtype=np.int32)
+            #todo:修改vocab让padid在最前面
+            context_idxs = np.full([self.max_p_num, self.max_p_len],  fill_value=pad_id,  dtype=np.int32)
+            question_idxs = np.full([self.max_q_len], fill_value=pad_id, dtype=np.int32)
 
             for idx, passage in enumerate(sample['passages']):
                 p_token_ids = passage['passage_token_ids']
@@ -224,27 +227,38 @@ class BRCDataset(object):
 
             if 'answer_passages' in sample and len(sample['answer_passages']):
                 gold_passage_offset = self.max_p_len * sample['answer_passages'][0]
+                #todo:passage是一个自然段，而answer_spans是相对自然段的，还是相对doc的
                 start_id = gold_passage_offset + sample['answer_spans'][0][0]
                 end_id = gold_passage_offset + sample['answer_spans'][0][1]
             else:
                 start_id = end_id = 0
-            if index == 0:
-                print()
 
             example = tf.train.Example(features=tf.train.Features(feature={
                 "passage_token_ids": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_idxs.tostring()])),
-                "question_token_ids": tf.train.Feature(int64_list=tf.train.Int64List(value=[question_idxs.tostring()])),
-                "start_id": tf.train.Feature(bytes_list=tf.train.BytesList(value=[start_id])),
-                "end_id": tf.train.Feature(bytes_list=tf.train.BytesList(value=[end_id]))
+                "question_token_ids": tf.train.Feature(int64_list=tf.train.BytesList(value=[question_idxs.tostring()])),
+                "start_id": tf.train.Feature(bytes_list=tf.train.Int64List(value=[start_id])),
+                "end_id": tf.train.Feature(bytes_list=tf.train.Int64List(value=[end_id]))
             }))
             writer.write(example.SerializeToString())
-        self.logger.info("{} {} records have saved.".format(len(data_set), dataset))
+        self.logger.info("{} records of {} set have saved.".format(len(data_set), dataset))
         writer.close()
 
-    def save_records(self):
+    def save_records(self, pad_id):
+        """
+        save the dataset to records file. Remember to call after convert_to_ids method.
+        :param pad_id:
+        :return:
+        """
         train_records_path = os.path.join(self.config.records_dir, "train.tfrecords")
         dev_records_path = os.path.join(self.config.records_dir, "dev.tfrecords")
         test_records_path = os.path.join(self.config.records_dir, "test.tfrecords")
+
+        self._save_records(train_records_path, self.train_set, pad_id)
+        self._save_records(dev_records_path, self.dev_set, pad_id)
+        self._save_records(test_records_path, self.test_set, pad_id)
+
+        self.logger.info("all data have saved to records files.")
+
 
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
@@ -273,4 +287,3 @@ class BRCDataset(object):
             batch_indices = indices[batch_start: batch_start + batch_size]
             yield self._one_mini_batch(data, batch_indices, pad_id)
 
-    def store_as_records(self):
