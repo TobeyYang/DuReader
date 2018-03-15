@@ -14,6 +14,8 @@ class Model(object):
         self.logger = logging.getLogger("brc")
         self.config = config
 
+
+
         #The start time of build model.
         self.start_t = time.time()
         self.c = tf.placeholder(tf.int32, shape=[None, None])   #context
@@ -31,25 +33,27 @@ class Model(object):
             self.is_train = tf.get_variable(
                 "is_train", dtype=tf.bool, trainable=False, initializer=tf.constant(True, dtype=tf.bool))
             #todo: where is the shape?
-            self.word_mat = tf.get_variable("word_mat", initializer=tf.random_uniform_initializer, dtype=tf.float32)
+            self.word_mat = tf.get_variable("word_mat", shape=[self.config.vocab_size, self.config.embed_size], initializer=tf.random_uniform_initializer, dtype=tf.float32)
 
         #Todo:修改字典， span_id必须是0
         self.c_mask = tf.cast(self.c, tf.bool)
         self.q_mask = tf.cast(self.q, tf.bool)
 
-        if opt:
-            #Todo:batch_size 变量名对不对
-            N= config.batch_size
-            self.c_maxlen = tf.reduce_max(self.c_len)
-            self.q_maxlen = tf.reduce_max(self.q_len)
-            self.c = tf.slice(self.c, [0, 0], [N, self.c_maxlen])
-            self.q = tf.slice(self.q, [0, 0], [N, self.q_maxlen])
-            self.c_mask = tf.slice(self.c_mask, [0, 0], [N, self.c_maxlen])
-            self.q_mask = tf.slice(self.q_mask, [0, 0], [N, self.q_maxlen])
-            self.y1 = tf.slice(self.y1, [0, 0], [N, self.c_maxlen])
-            self.y2 = tf.slice(self.y2, [0, 0], [N, self.c_maxlen])
-        else:
-            self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
+        # if opt:
+        #     #Todo:batch_size 变量名对不对
+        #     N= config.batch_size
+        #     self.c_maxlen = tf.reduce_max(self.c_len)
+        #     self.q_maxlen = tf.reduce_max(self.q_len)
+        #     self.c = tf.slice(self.c, [0, 0], [N, self.c_maxlen])
+        #     self.q = tf.slice(self.q, [0, 0], [N, self.q_maxlen])
+        #     self.c_mask = tf.slice(self.c_mask, [0, 0], [N, self.c_maxlen])
+        #     self.q_mask = tf.slice(self.q_mask, [0, 0], [N, self.q_maxlen])
+        #     self.y1 = tf.slice(self.y1, [0, 0], [N, self.c_maxlen])
+        #     self.y2 = tf.slice(self.y2, [0, 0], [N, self.c_maxlen])
+        # else:
+        #     self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
+
+        self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
 
         self.ready()
         self.end_t = time.time()
