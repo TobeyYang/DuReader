@@ -140,50 +140,52 @@ def average_gradients(tower_grads):
 
 def train(config):
 
-    logger = logging.getLogger("brc")
+    with tf.Graph.as_default(), tf.device('/cpu:0')
+        logger = logging.getLogger("brc")
 
-    train_data_file = os.path.join(config.records_dir, "train.tfrecords")
-    dev_data_file = os.path.join(config.records_dir, "dev.tfrecords")
-    test_data_file = os.path.join(config.records_dir, "test.tfrecords")
-    statistics_file = os.path.join(config.records_dir, "statistics.json")
+        train_data_file = os.path.join(config.records_dir, "train.tfrecords")
+        dev_data_file = os.path.join(config.records_dir, "dev.tfrecords")
+        test_data_file = os.path.join(config.records_dir, "test.tfrecords")
+        statistics_file = os.path.join(config.records_dir, "statistics.json")
 
-    with open(statistics_file, 'r')as p:
-        statistics = json.load(p)
-
-
-    # opt = tf.train.AdamOptimizer(config.learning_rate)
-
-    # logger.info("Training the model for epoch {}".format(epoch))
-    context_ids, question_ids, y1, y2 = read_and_decode_single_example(train_data_file)
-    context_batch, question_batch, start_batch, end_batch = tf.train.shuffle_batch(
-        [context_ids, question_ids, y1, y2],
-        batch_size=config.batch_size,
-        capacity=200,
-        min_after_dequeue=100,
-        num_threads=4
-    )
-
-    split_context_ids = tf.split(0, config.gpu_num, context_batch)
-    split_question_ids = tf.split(0, config.gpu_num, question_batch)
-    start_batch = tf.split(0, config.gpu_num, start_batch)
-    end_batch = tf.split(0, config.gpu_num, end_batch)
-
-    opt = tf.train.AdamOptimizer(config.learning_rate)
+        with open(statistics_file, 'r')as p:
+            statistics = json.load(p)
 
 
-    gpus = config.gpu.split(',')
+        # opt = tf.train.AdamOptimizer(config.learning_rate)
 
-    tower_grads = []
-    with tf.variable_scope(tf.get_variable_scope()):
-        for i in config.gpu_num:
-            with tf.device('/gpu:{}'.format(gpus[i])):
-                with tf.name_scope('tower {}'.format(i)) as scope:
-                    loss = tower_loss(config, split_context_ids, split_question_ids, start_batch, end_batch)
-                    tf.get_variable_scope().reuse_variables()
+        # logger.info("Training the model for epoch {}".format(epoch))
+        context_ids, question_ids, y1, y2 = read_and_decode_single_example(train_data_file)
+        context_batch, question_batch, start_batch, end_batch = tf.train.shuffle_batch(
+            [context_ids, question_ids, y1, y2],
+            batch_size=config.batch_size,
+            capacity=500,
+            min_after_dequeue=100,
+            num_threads=4
+        )
+        batch_queue = tf.contrib.slim.prefetch_queue.prefetch_queue([context_batch,
+                                                                     question_batch,
+                                                                     start_batch,
+                                                                     end_batch])
+        #
+        # split_context_ids = tf.split(0, config.gpu_num, context_batch)
+        # split_question_ids = tf.split(0, config.gpu_num, question_batch)
+        # start_batch = tf.split(0, config.gpu_num, start_batch)
+        # end_batch = tf.split(0, config.gpu_num, end_batch)
 
-                    grads = opt.compute_gradients(loss)
+        opt = tf.train.AdamOptimizer(config.learning_rate)
 
-                    tower_grads.append(grads)
+        gpus = config.gpu.split(',')
+        tower_grads = []
+        with tf.variable_scope(tf.get_variable_scope()):
+            for i in config.gpu_num:
+                with tf.device('/gpu:{}'.format(gpus[i])):
+                    with tf.name_scope('tower {}'.format(i)) as scope:
+                        context_batch, question_batch, start_batch, end_batch = batch_queue.dequeue()
+                        loss = tower_loss(config, context_batch, question_batch, start_batch, end_batch)
+                        tf.get_variable_scope().reuse_variables()
+                        grads = opt.compute_gradients(loss)
+                        tower_grads.append(grads)
 
         grads = average_gradients(tower_grads)
 
@@ -207,16 +209,14 @@ def train(config):
 
             assert not np.isnan(loss_value)
 
-
             if step %10 == 0:
-                num_examples_per_step = config.batch_size
+                num_examples_per_step = config.batch_size*config.gpu_num
                 examples_per_sec = num_examples_per_step/duration
-                sec_per_batch = duration
-                format_str = ('step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                              'sec/batch)')
+                sec_per_batch = duration/config.gpu_num
+                format_str = ('step {:d}, loss = {:.2f} ({:.1f} examples/sec; {:.3f} sec/batch)')
                 logger.info(format_str.format(step, loss_value, examples_per_sec, sec_per_batch))
 
-            if step % 100 == 0 or (step+1) == config.max_steps:
+            if step % 1000 == 0 or (step+1) == config.max_steps:
                 checkpoint_path = os.path.join(config.model_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_path, global_step=step)
 
@@ -230,10 +230,11 @@ def evaluate(config, sess):
     context_batch, question_batch, start_batch, end_batch = tf.train.shuffle_batch(
         [context_ids, question_ids, y1, y2],
         batch_size=1,
-        capacity=200,
+        capacity=500,
         min_after_dequeue=100,
         num_threads=4
     )
+    batch_queue = tf.contrib.slim.
     gpus = config.gpu.split(',')
     with tf.device('/gpu:{}'.format(gpus[0])):
         tf.get_variable_scope().reuse_variables()

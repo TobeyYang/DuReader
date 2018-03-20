@@ -63,10 +63,11 @@ def parse_args():
                                 help='train epochs')
     train_settings.add_argument('--vocab_size', type=int, required=True,
                                 help='the size of vocabulary')
+    train_settings.add_argument('--max_steps', type=int, default=60000,
+                                help='the max steps of training.')
 
     model_settings = parser.add_argument_group('model settings')
-    model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
-                                help='choose the algorithm to use')
+
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
     model_settings.add_argument('--hidden_size', type=int, default=150,
