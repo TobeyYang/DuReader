@@ -252,6 +252,15 @@ class BRCDataset(object):
         train_records_path = os.path.join(self.config.records_dir, "train.tfrecords")
         dev_records_path = os.path.join(self.config.records_dir, "dev.tfrecords")
         test_records_path = os.path.join(self.config.records_dir, "test.tfrecords")
+        statistics_file = os.path.join(self.config.records_dir, "statistics.json")
+
+        dict = {}
+        dict['train_examples_num'] = len(self.train_set)
+        dict['dev_examples_num'] = len(self.dev_set)
+        dict['test_examples_num'] = len(self.test_set)
+
+        with open(statistics_file, 'w', encoding='utf8')as p:
+            json.dump(dict, p)
 
         self._save_records(train_records_path, self.train_set, pad_id)
         self._save_records(dev_records_path, self.dev_set, pad_id)

@@ -33,4 +33,5 @@ __all__ = [
     'normalize',
     'find_fake_answer',
     'find_best_question_match',
+    'read_and_decode_single_example',
     ]

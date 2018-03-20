@@ -19,8 +19,8 @@ This module prepares and runs the whole system.
 """
 
 import sys
-reload(sys)
-sys.setdefaultencoding('utf8')
+# reload(sys)
+# sys.setdefaultencoding('utf8')
 sys.path.append('..')
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -94,8 +94,6 @@ def parse_args():
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../data/vocab/',
                                help='the dir to save vocabulary')
-    path_settings.add_argument('--records_dir', default='../data/records/',
-                               help='the dir to save records of data')
     path_settings.add_argument('--model_dir', default='../data/models/',
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
@@ -110,6 +108,7 @@ def parse_args():
 def prepare(args):
     """
     checks data, creates the directories, prepare the vocabulary and embeddings
+    and save the dataset to records file.
     """
     logger = logging.getLogger("brc")
     logger.info('Checking the data files...')

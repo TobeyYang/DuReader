@@ -529,9 +529,9 @@ def main(args):
     except AssertionError as ae:
         err = ae
 
-    print json.dumps(
+    print(json.dumps(
             format_metrics(metrics, args.task, err),
-            ensure_ascii=False).encode('utf8')
+            ensure_ascii=False).encode('utf8'))
 
 
 if __name__ == '__main__':

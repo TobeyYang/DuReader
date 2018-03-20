@@ -73,8 +73,6 @@ class native_gru:
             input_size_ = input_size if layer == 0 else 2 * num_units
             gru_fw = tf.contrib.rnn.GRUCell(num_units)
             gru_bw = tf.contrib.rnn.GRUCell(num_units)
-            # init_fw = tf.Variable(tf.zeros([batch_size, num_units]))
-            # init_bw = tf.Variable(tf.zeros([batch_size, num_units]))
             init_fw = tf.get_variable("init_fw_layer_{}".format(layer), initializer=tf.zeros([batch_size, num_units]))
             init_bw = tf.get_variable("init_bw_layer_{}".format(layer), initializer=tf.zeros([batch_size, num_units]))
             mask_fw = dropout(tf.ones([batch_size, 1, input_size_], dtype=tf.float32),

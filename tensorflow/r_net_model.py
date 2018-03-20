@@ -5,28 +5,30 @@ import os
 import logging
 import json
 import numpy as np
-from utils import compute_bleu_rouge, normalize
+from utils import compute_bleu_rouge, normalize, read_and_decode_single_example
 
 
 class Model(object):
-    def __init__(self, config , opt=True):
+    def __init__(self, config , contexts, questions, start_labels, end_labels, opt=True):
 
         self.logger = logging.getLogger("brc")
         self.config = config
 
+        self.batch_size = tf.shape(start_labels)[0]
 
 
-        #The start time of build model.
         self.start_t = time.time()
-        self.c = tf.placeholder(tf.int32, shape=[None, None])   #context
-        self.q = tf.placeholder(tf.int32, shape=[None, None])
-        self.c_len = tf.placeholder(tf.int32, [None])
-        self.q_len = tf.placeholder(tf.int32, [None])
-        self.start_label = tf.placeholder(tf.int32, [None])
-        self.end_label = tf.placeholder(tf.int32, [None])
+        self.c = contexts
+        self.q = questions
 
-        self.y1 = tf.one_hot(self.start_label, self.c_len)
-        self.y2 = tf.one_hot(self.end_label, self.c_len)
+        self.c_mask = tf.cast(self.c, tf.bool)
+        self.q_mask = tf.cast(self.q, tf.bool)
+
+        self.c_len = tf.reduce_sum(tf.cast(self.c_mask, tf.int32), axis=-1)
+        self.q_len = tf.reduce_sum(tf.cast(self.q_mask, tf.int32), axis=-1)
+        self.y1 = tf.one_hot(start_labels, config.max_p_len*config.max_p_num)
+        self.y2 = tf.one_hot(end_labels, config.max_p_len*config.max_p_num)
+        self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
 
         #是否是训练过程，用在dropout
         with tf.device("/cpu:0"):
@@ -35,46 +37,18 @@ class Model(object):
             #todo: where is the shape?
             self.word_mat = tf.get_variable("word_mat", shape=[self.config.vocab_size, self.config.embed_size], initializer=tf.random_uniform_initializer, dtype=tf.float32)
 
-        #Todo:修改字典， span_id必须是0
-        self.c_mask = tf.cast(self.c, tf.bool)
-        self.q_mask = tf.cast(self.q, tf.bool)
 
-        # if opt:
-        #     #Todo:batch_size 变量名对不对
-        #     N= config.batch_size
-        #     self.c_maxlen = tf.reduce_max(self.c_len)
-        #     self.q_maxlen = tf.reduce_max(self.q_len)
-        #     self.c = tf.slice(self.c, [0, 0], [N, self.c_maxlen])
-        #     self.q = tf.slice(self.q, [0, 0], [N, self.q_maxlen])
-        #     self.c_mask = tf.slice(self.c_mask, [0, 0], [N, self.c_maxlen])
-        #     self.q_mask = tf.slice(self.q_mask, [0, 0], [N, self.q_maxlen])
-        #     self.y1 = tf.slice(self.y1, [0, 0], [N, self.c_maxlen])
-        #     self.y2 = tf.slice(self.y2, [0, 0], [N, self.c_maxlen])
-        # else:
-        #     self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
-
-        self.c_maxlen, self.q_maxlen = config.max_p_len, config.max_q_len
 
         self.ready()
         self.end_t = time.time()
         self.logger.info("Time to build the model-{}: {} s".format(self, self.end_t-self.start_t))
 
-        # if trainable:
-        #     self.lr = tf.get_variable(
-        #         "lr", shape=[], dtype=tf.float32, trainable=False)
-        #     self.opt = tf.train.AdadeltaOptimizer(
-        #         learning_rate=self.lr, epsilon=1e-6)
-        #     grads = self.opt.compute_gradients(self.loss)
-        #     gradients, variables = zip(*grads)
-        #     capped_grads, _ = tf.clip_by_global_norm(
-        #         gradients, config.grad_clip)
-        #     self.train_op = self.opt.apply_gradients(
-        #         zip(capped_grads, variables), global_step=self.global_step)
 
     def ready(self):
         config = self.config
-        N, PL, QL, CL, d= config.batch_size, self.c_maxlen, self.q_maxlen, config.char_limit, config.hidden
+        N, d= config.batch_size, config.hidden_size
         gru = cudnn_gru if config.use_cudnn else native_gru
+        concat_layers = True
 
         with tf.variable_scope("emb"):
             # maybe add char emb
@@ -90,8 +64,8 @@ class Model(object):
             with tf.device("/cpu:0"):
                 rnn = gru(num_layers=3, num_units=d, batch_size=N, input_size=c_emb.get_shape(
                 ).as_list()[-1], keep_prob=config.keep_prob, is_train=self.is_train)
-            c = rnn(c_emb, seq_len=self.c_len)
-            q = rnn(q_emb, seq_len=self.q_len)
+            c = rnn(c_emb, seq_len=self.c_len, concat_layers=True)
+            q = rnn(q_emb, seq_len=self.q_len, concat_layers=True)
 
         with tf.variable_scope("attention"):
             qc_att = dot_attention(c, q, mask=self.q_mask, hidden=d,
@@ -99,7 +73,7 @@ class Model(object):
             with tf.device("/cpu:0"):
                 rnn = gru(num_layers=1, num_units=d, batch_size=N, input_size=qc_att.get_shape(
                 ).as_list()[-1], keep_prob=config.keep_prob, is_train=self.is_train)
-            att = rnn(qc_att, seq_len=self.c_len)
+            att = rnn(qc_att, seq_len=self.c_len, concat_layers=True)
 
         with tf.variable_scope("match"):
             self_att = dot_attention(
@@ -107,7 +81,13 @@ class Model(object):
             with tf.device("/cpu:0"):
                 rnn = gru(num_layers=1, num_units=d, batch_size=N, input_size=self_att.get_shape(
                 ).as_list()[-1], keep_prob=config.keep_prob, is_train=self.is_train)
-            match = rnn(self_att, seq_len=self.c_len)
+            match = rnn(self_att, seq_len=self.c_len, concat_layers=True)
+
+            #concat the passages in the same document.
+            match = tf.reshape(
+                match,
+                [self.batch_size, self.c_maxlen*self.config.max_p_num, d*2]
+            )
 
         with tf.variable_scope("pointer"):
             init = summ(q[:, :, -2 * d:], d, mask=self.q_mask,
@@ -115,6 +95,8 @@ class Model(object):
             with tf.device("/cpu:0"):
                 pointer = ptr_net(batch=N, hidden=init.get_shape().as_list(
                 )[-1], keep_prob=config.ptr_keep_prob, is_train=self.is_train)
+
+            #reshape the
             logits1, logits2 = pointer(init, match, d, self.c_mask)
 
         with tf.variable_scope("predict"):
@@ -135,11 +117,132 @@ class Model(object):
         return self.loss
 
 
-def tower_loss(batch, config):
-    model = Model()
+def tower_loss(config, contexts, questions, start_labels, end_labels):
+    logger = logging.getLogger("brc")
+    model = Model(config, contexts, questions, start_labels, end_labels)
+    tf.add_to_collection('models', model)
+    return model.get_loss()
 
-def train(data, vocab, epochs, batch_size, save_dir, save_prefix, dropout_keep_prob=1.0, evaluate=True):
-    pad_id = vocab.get_id(vocab.pad_token)
-    max_bleu_4=0
+def average_gradients(tower_grads):
+    average_grads = []
+    for grad_and_vars in zip(*tower_grads):
+        grads = []
+        for g, _ in grad_and_vars:
+            expanded_g = tf.expand_dims(g, 0)
+            grads.append(expanded_g)
+        grad = tf.concat(axis=0, values=grads)
+        grad = tf.reduce_mean(grad, 0)
+
+        v = grad_and_vars[0][1]
+        grad_and_var = (grad, v)
+        average_grads.append(grad_and_var)
+    return average_grads
+
+def train(config):
+
+    logger = logging.getLogger("brc")
+
+    train_data_file = os.path.join(config.records_dir, "train.tfrecords")
+    dev_data_file = os.path.join(config.records_dir, "dev.tfrecords")
+    test_data_file = os.path.join(config.records_dir, "test.tfrecords")
+    statistics_file = os.path.join(config.records_dir, "statistics.json")
+
+    with open(statistics_file, 'r')as p:
+        statistics = json.load(p)
+
+
+    # opt = tf.train.AdamOptimizer(config.learning_rate)
+
+    # logger.info("Training the model for epoch {}".format(epoch))
+    context_ids, question_ids, y1, y2 = read_and_decode_single_example(train_data_file)
+    context_batch, question_batch, start_batch, end_batch = tf.train.shuffle_batch(
+        [context_ids, question_ids, y1, y2],
+        batch_size=config.batch_size,
+        capacity=200,
+        min_after_dequeue=100,
+        num_threads=4
+    )
+
+    split_context_ids = tf.split(0, config.gpu_num, context_batch)
+    split_question_ids = tf.split(0, config.gpu_num, question_batch)
+    start_batch = tf.split(0, config.gpu_num, start_batch)
+    end_batch = tf.split(0, config.gpu_num, end_batch)
+
+    opt = tf.train.AdamOptimizer(config.learning_rate)
+
+
+    gpus = config.gpu.split(',')
+
+    tower_grads = []
+    with tf.variable_scope(tf.get_variable_scope()):
+        for i in config.gpu_num:
+            with tf.device('/gpu:{}'.format(gpus[i])):
+                with tf.name_scope('tower {}'.format(i)) as scope:
+                    loss = tower_loss(config, split_context_ids, split_question_ids, start_batch, end_batch)
+                    tf.get_variable_scope().reuse_variables()
+
+                    grads = opt.compute_gradients(loss)
+
+                    tower_grads.append(grads)
+
+        grads = average_gradients(tower_grads)
+
+        train_op = opt.apply_gradients(grads)
+
+        saver = tf.train.Saver(tf.global_variables())
+
+        init = tf.global_variables_initializer()
+
+        sess = tf.Session(config=tf.ConfigProto(
+            allow_soft_placement=True,
+            log_device_placement=True
+        ))
+        sess.run(init)
+        tf.train.start_queue_runners(sess=sess)
+
+        for step in config.max_steps:
+            start_time = time.time()
+            _, loss_value = sess.run([train_op, loss])
+            duration = time.time()-start_time
+
+            assert not np.isnan(loss_value)
+
+
+            if step %10 == 0:
+                num_examples_per_step = config.batch_size
+                examples_per_sec = num_examples_per_step/duration
+                sec_per_batch = duration
+                format_str = ('step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                              'sec/batch)')
+                logger.info(format_str.format(step, loss_value, examples_per_sec, sec_per_batch))
+
+            if step % 100 == 0 or (step+1) == config.max_steps:
+                checkpoint_path = os.path.join(config.model_dir, 'model.ckpt')
+                saver.save(sess, checkpoint_path, global_step=step)
+
+
+def evaluate(config, sess):
+    logger = logging.getLogger("brc")
+    logger.info('start to evaluate..')
+    dev_data_file = os.path.join(config.records_dir, "dev.tfrecords")
+
+    context_ids, question_ids, y1, y2 = read_and_decode_single_example(dev_data_file)
+    context_batch, question_batch, start_batch, end_batch = tf.train.shuffle_batch(
+        [context_ids, question_ids, y1, y2],
+        batch_size=1,
+        capacity=200,
+        min_after_dequeue=100,
+        num_threads=4
+    )
+    gpus = config.gpu.split(',')
+    with tf.device('/gpu:{}'.format(gpus[0])):
+        tf.get_variable_scope().reuse_variables()
+        model = Model(config, context_batch, question_batch, start_batch, end_batch)
+
+
+
+
+
+
 
 

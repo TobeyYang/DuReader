@@ -10,7 +10,8 @@ import logging
 from dataset import BRCDataset
 from vocab import Vocab
 # from rc_model import RCModel
-
+from r_net_model import Model, train
+import tensorflow as tf
 
 def parse_args():
     """
@@ -25,8 +26,10 @@ def parse_args():
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
-    parser.add_argument('--gpu', type=str, default=['0'],nargs='+',
+    parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu devices')
+    parser.add_argument('--gpu_num', type=int,
+                        help='the number of gpu.')
 
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
@@ -41,14 +44,17 @@ def parse_args():
                                 help='train batch size')
     train_settings.add_argument('--epochs', type=int, default=10,
                                 help='train epochs')
+    train_settings.add_argument('--max_steps', type=int, default=6000,
+                                help='max steps')
+
+    train_settings.add_argument('--vocab_size', type=int, required=True,
+                                help='the vocab size.')
 
     model_settings = parser.add_argument_group('model settings')
-    model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
-                                help='choose the algorithm to use')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
     model_settings.add_argument('--hidden_size', type=int, default=150,
-                                help='size of LSTM hidden units')
+                                help='size of GRU hidden units')
     model_settings.add_argument('--max_p_num', type=int, default=5,
                                 help='max passage num in one sample')
     model_settings.add_argument('--max_p_len', type=int, default=500,
@@ -74,6 +80,8 @@ def parse_args():
                                help='the dir to save vocabulary')
     path_settings.add_argument('--model_dir', default='../data/models/',
                                help='the dir to store models')
+    path_settings.add_argument('--records_dir', default='../data/records/',
+                               help='the dir to save records of data')
     path_settings.add_argument('--result_dir', default='../data/results/',
                                help='the dir to output the results')
     path_settings.add_argument('--summary_dir', default='../data/summary/',
@@ -87,6 +95,8 @@ def prepare(args):
     """
     checks data, creates the directories, prepare the vocabulary and embeddings
     """
+
+
     logger = logging.getLogger("brc")
     logger.info('Checking the data files...')
     for data_path in args.train_files + args.dev_files + args.test_files:
@@ -109,9 +119,14 @@ def prepare(args):
     logger.info('After filter {} tokens, the final vocab size is {}'.format(filtered_num,
                                                                             vocab.size()))
 
-    logger.info('Assigning embeddings...')
+    # logger.info('Assigning embeddings...')
     # vocab.randomly_init_embeddings(args.embed_size)          #random init in prepare!!
 
+    #save the datasets to records files.
+    logger.info('Saving the datasets.')
+    brc_data.convert_to_ids(vocab)
+    pad_id = vocab.get_id(vocab.pad_token)
+    brc_data.save_records(pad_id)
 
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:
@@ -120,25 +135,31 @@ def prepare(args):
     logger.info('Done with preparing!')
 
 
-def train(args):
+
+
+def start_train(args):
     """
     trains the reading comprehension model
     """
     logger = logging.getLogger("brc")
-    logger.info('Load data_set and vocab...')
-    with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
-        vocab = pickle.load(fin)
-    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
-                          args.train_files, args.dev_files)
-    logger.info('Converting text into ids...')
-    brc_data.convert_to_ids(vocab)
-    logger.info('Initialize the model...')
-    rc_model = RCModel(vocab, args)
-    logger.info('Training the model...')
-    rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
-                   save_prefix=args.algo,
-                   dropout_keep_prob=args.dropout_keep_prob)
-    logger.info('Done with model training!')
+    # logger.info('Load data_set and vocab...')
+    # with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
+    #     vocab = pickle.load(fin)
+    # brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
+    #                       args.train_files, args.dev_files)
+    # logger.info('Converting text into ids...')
+    # brc_data.convert_to_ids(vocab)
+    # logger.info('Initialize the model...')
+    # rc_model = RCModel(vocab, args)
+    # logger.info('Training the model...')
+    # rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
+    #                save_prefix=args.algo,
+    #                dropout_keep_prob=args.dropout_keep_prob)
+    # logger.info('Done with model training!')
+    train(args)
+    logger.info("Done with model training!")
+
+
 
 
 def evaluate(args):
